@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <title>Attendance</title>
+        <style>
+            html, body { 
+                height:100%; 
+                margin: 0;
+                padding: 0;                
+                background-color: #e5e5e5;
+                box-sizing: border-box;
+            }
+            body {                
+                font-family: Arial, Helvetica, sans-serif;
+                color: #444;
+                display: flex;
+                flex-direction: column;
+                align-content: center;
+                justify-content: center;
+                align-items: center;
+            }
+            #upload, #downloads {
+                display: flex;
+                justify-content: center;
+                flex-wrap: wrap;
+                align-items: baseline;
+                margin-bottom: 10px;
+            }
+            #fileName {
+                max-width: 220px;
+                height: 20px;
+                white-space: nowrap;
+                overflow: hidden;
+                text-overflow: ellipsis;
+            }
+            .upload-button {
+                border: none;
+                margin: 2px 10px 2px 4px;
+                padding: 8px 18px;
+                color: #e5e5e5;
+                font-weight: 700;
+                border-radius: 16px;
+                background-color: #1473e6;
+                cursor: pointer;
+            }
+            .upload-button:hover {
+                background-color: #0d66d0;
+            }
+            .button {
+                border: 2px solid #4b4b4b;
+                margin: 2px 4px;
+                padding: 6px 16px;
+                color: #4b4b4b;
+                font-weight: 700;
+                border-radius: 16px;
+                cursor: pointer;
+            }
+            .button:hover {
+                transition: all ease 0.3s;
+                color: #e5e5e5;
+                background-color: #4b4b4b;
+            }
+        </style>
+    </head>
+    <body>
+        <div id="fileContainer" style="display: none;">
+            <div id="upload">
+                <button class="upload-button" onclick="document.querySelector('#file').click();">Select CSV File</button>
+                <div id="fileName"></div>
+                <input id="file" style="display: none;" type="file" accept=".csv" onchange="readFile(this)">
+            </div>            
+            <div id="downloads"></div>
+        </div>
+        
+        <script>
+            const membersList = [];
+            let participantsList = [];
+            // fetch('https://spreadsheets.google.com/feeds/list/1RxlcXTCtx8jUzJpEyC0VaTAMD8th7Ji5zk8eZPSaEN8/1/public/values?alt=json')
+            // .then(function(response) {
+            //     return response.text();
+            // })
+            // .then(function(text) {
+            //     console.log('Request successful', text);
+            // })
+            // .catch(function(error) {
+            //     log('Request failed', error)
+            // });
+            function status(response) {
+                if (response.status >= 200 && response.status < 300) {
+                    return Promise.resolve(response)
+                } else {
+                    return Promise.reject(new Error(response.statusText))
+                }
+            }
+
+            function json(response) {
+                return response.json()
+            }
+
+            fetch('https://spreadsheets.google.com/feeds/list/1RxlcXTCtx8jUzJpEyC0VaTAMD8th7Ji5zk8eZPSaEN8/1/public/values?alt=json')
+            .then(status)
+            .then(json)
+            .then(function(data) {
+                document.querySelector('#fileContainer').style.display = 'block';
+                // console.log('Request succeeded with JSON response', data);
+                data.feed.entry.forEach(data => {
+                    membersList.push(
+                        {
+                            id: data['gsx$id']['$t'],
+                            name: data['gsx$name']['$t'],
+                            appName: data['gsx$appname']['$t'],
+                            appEmailId: data['gsx$appemailid']['$t'],
+                            registeredEmailId: data['gsx$registeredemailid']['$t'],
+                        }
+                    );
+                });
+            }).catch(function(error) {
+                console.log('Request failed', error);
+            });
+
+            const exportCSVFile = (event) => {
+                let csvContent = "data:text/csv;charset=utf-8,";
+                const element = event.target;
+                const data = element.data;
+                const headers = Object.keys(data[0]);
+                csvContent += headers.map(header => '\"' + header + '\"').join(',') + '\n';
+                csvContent += data.map(person => { 
+                    var content = []; 
+                    for(var key in person) {
+                        content.push('\"' + person[key] + '\"');
+                    }
+                    return content.join(',');
+                }).join('\n');
+                const a = document.createElement('a');
+                const date = new Date();
+                const dateTime = date.toLocaleDateString().replace(/[/]/g,'-') + ' ' + date.toTimeString().split(' ')[0].replace(/:/g, '-')
+                a.href = encodeURI(csvContent);
+                a.download = element.textContent + '(' + dateTime +').csv';
+                a.style.visibility = 'hidden';
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+            }
+
+            const addButtonWithData = (parentElement, text, list) => {
+                text += `(${list.length})`
+                let button = document.createElement('button');
+                button.textContent = text;
+                button.classList.add('button');
+                button.data = list;
+                button.onclick = exportCSVFile;
+                parentElement.appendChild(button);
+            }
+
+            const caculatePaticipants = () => {
+                let absentMembers = [], presentMembers = [], unknownMembers = [];
+                membersList.forEach(function(member){ 
+                    let person = participantsList.find(person => member.appName.split('|').map(appName => appName.trim() === person.name.trim()).some(flag => flag)); 
+                    if(!person) { console.log(member.appName); absentMembers.push(member); } 
+                    else { person.presentFlag = true; presentMembers.push(member); } 
+                });
+                unknownMembers = participantsList.filter(person => !person.presentFlag);
+                const downloads = document.querySelector('#downloads');
+                addButtonWithData(downloads, 'Present', presentMembers);
+                addButtonWithData(downloads, 'Absent', absentMembers);
+                addButtonWithData(downloads, 'Unknown', unknownMembers);
+            }
+
+            const stringToArray = (str) => {
+                let escapeTexts = str.match(/\"(.*?)\"/g) || [];
+                let text = str.replace(/\"(.*?)\"/g, '{dummyText}').replace(/,/g, '{,}');
+                escapeTexts.forEach(escapeText => text = text.replace('{dummyText}', escapeText.replace(/\"/g, '')));
+                return text.split('{,}');
+            }
+            const arrayToObject = (headers, values) => {
+                var obj = {};
+                headers.forEach((key, i) => obj[key] = (values[i] ? values[i] : ''));
+                return obj;
+            }
+            const readFile = (input) => {
+                let file = input.files[0];
+                const fileName = document.querySelector('#fileName');
+                const downloads = document.querySelector('#downloads');
+                fileName.textContent = file ? file.name : '';
+                downloads.innerHTML = '';
+                participantsList = [];
+                if(!file) return;
+                if(typeof file === 'object' && !(file.type === 'text/csv' || file.type === 'application/vnd.ms-excel')) 
+                {
+                    alert('This files is not in CSV format.');
+                    document.querySelector('#file').value = '';
+                    return;
+                }
+                let reader = new FileReader();
+                reader.readAsText(file);
+                reader.onload = function() {
+                    const csvText = reader.result;
+                    var headerMap = {
+                        'Name (Original Name)' : 'name',
+                        'User Email': 'emailId',
+                        'Total Duration (Minutes)': 'duration',
+                        'Guest': 'guest',
+                    }
+                    let headers = stringToArray(csvText.split('\r\n')[0]);
+                    headers = headers.map(header => header in headerMap ? headerMap[header] : header);                    
+                    const csvEntries = csvText.split('\r\n').slice(1);
+                    participantsList = csvEntries.map(entry => arrayToObject(headers, stringToArray(entry))).filter(person => person.guest === 'Yes');
+                    participantsList.forEach(person => { person.presentFlag = false; if(person.name.indexOf("'") === 0) { person.name = person.name.replace("'", '') } });
+                    caculatePaticipants();                    
+                };
+                reader.onerror = function() {
+                    console.log(reader.error);
+                };
+            }
+        </script>
+    </body>
+</html>
